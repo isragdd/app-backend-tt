@@ -66,7 +66,7 @@ app.get('/', (req, res) => {
 // API ROUTES
 //
 
-app.get('/state', (req, res) => {
+app.get('/api/state', (req, res) => {
   try {
     const userId = req.query.user_id || 'default';
     const state = db.prepare(
@@ -89,7 +89,7 @@ app.get('/state', (req, res) => {
   }
 });
 
-app.post('/state', (req, res) => {
+app.post('/api/state', (req, res) => {
   try {
     const userId = req.body.user_id || 'default';
     const { stats, tasks, items, props, custom, day, collapsed } = req.body;
@@ -123,7 +123,7 @@ app.post('/state', (req, res) => {
   }
 });
 
-app.get('/health', (req, res) => {
+app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', time: Date.now() });
 });
 
