@@ -10,7 +10,9 @@ app.use(cors());
 app.use(express.json());
 
 // Initialize SQLite Database
-const db = new Database('rpg_tasks.db');
+const path = require('path');
+const dbPath = path.join(__dirname, 'rpg_tasks.db');
+const db = new Database(dbPath, { verbose: console.log });
 
 // Create tables if they don't exist
 db.exec(`
