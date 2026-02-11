@@ -11,26 +11,42 @@ app.use(express.json());
 
 // Initialize SQLite Database
 const path = require('path');
-const dbPath = path.join(__dirname, 'rpg_tasks.db');
+
+// Ensure data directory exists
+const fs = require('fs');
+const dataDir = path.join(__dirname, 'data');
+if (!fs.existsSync(dataDir)) {
+  fs.mkdirSync(dataDir, { recursive: true });
+}
+
+// Use proper database path
+const dbPath = path.join(dataDir, 'rpg_tasks.db');
+console.log('📁 Database location:', dbPath);
+
 const db = new Database(dbPath, { verbose: console.log });
 
 // Create tables if they don't exist
-db.exec(`
-  CREATE TABLE IF NOT EXISTS game_state (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id TEXT DEFAULT 'default',
-    stats TEXT NOT NULL,
-    tasks TEXT NOT NULL,
-    items TEXT NOT NULL,
-    props TEXT NOT NULL,
-    custom TEXT NOT NULL,
-    day TEXT NOT NULL,
-    collapsed TEXT NOT NULL,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
-
-  CREATE INDEX IF NOT EXISTS idx_user_id ON game_state(user_id);
-`);
+try {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS game_state (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id TEXT DEFAULT 'default',
+      stats TEXT NOT NULL,
+      tasks TEXT NOT NULL,
+      items TEXT NOT NULL,
+      props TEXT NOT NULL,
+      custom TEXT NOT NULL,
+      day TEXT NOT NULL,
+      collapsed TEXT NOT NULL,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_user_id ON game_state(user_id);
+  `);
+  console.log('✅ Database tables initialized');
+} catch (err) {
+  console.error('❌ Database initialization failed:', err);
+  process.exit(1);
+}
 
 // Ensure default user exists
 const existingState = db.prepare(
@@ -96,33 +112,62 @@ app.post('/api/state', (req, res) => {
   try {
     const userId = req.body.user_id || 'default';
     const { stats, tasks, items, props, custom, day, collapsed } = req.body;
-
-    db.prepare(`
-      INSERT INTO game_state (user_id, stats, tasks, items, props, custom, day, collapsed)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(user_id) DO UPDATE SET
-        stats=excluded.stats,
-        tasks=excluded.tasks,
-        items=excluded.items,
-        props=excluded.props,
-        custom=excluded.custom,
-        day=excluded.day,
-        collapsed=excluded.collapsed,
-        updated_at=CURRENT_TIMESTAMP
-    `).run(
-      userId,
-      JSON.stringify(stats),
-      JSON.stringify(tasks),
-      JSON.stringify(items),
-      JSON.stringify(props),
-      JSON.stringify(custom),
-      day,
-      JSON.stringify(collapsed)
-    );
-
-    res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to save state' });
+    
+    console.log('💾 Saving state for user:', userId);
+    console.log('📊 Stats:', stats);
+    
+    // Check if user exists
+    const existing = db.prepare('SELECT id FROM game_state WHERE user_id = ?').get(userId);
+    
+    if (existing) {
+      console.log('🔄 Updating existing state, ID:', existing.id);
+      // Update existing state
+      db.prepare(`
+        UPDATE game_state 
+        SET stats = ?, tasks = ?, items = ?, props = ?, custom = ?, day = ?, collapsed = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE user_id = ?
+      `).run(
+        JSON.stringify(stats),
+        JSON.stringify(tasks),
+        JSON.stringify(items),
+        JSON.stringify(props),
+        JSON.stringify(custom),
+        day,
+        JSON.stringify(collapsed),
+        userId
+      );
+      console.log('✅ State updated successfully');
+    } else {
+      console.log('➕ Inserting new state');
+      // Insert new state
+      db.prepare(`
+        INSERT INTO game_state (user_id, stats, tasks, items, props, custom, day, collapsed)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        userId,
+        JSON.stringify(stats),
+        JSON.stringify(tasks),
+        JSON.stringify(items),
+        JSON.stringify(props),
+        JSON.stringify(custom),
+        day,
+        JSON.stringify(collapsed)
+      );
+      console.log('✅ State inserted successfully');
+    }
+    
+    res.json({ success: true, message: 'State saved successfully' });
+  } catch (error) {
+    console.error('❌ ERROR saving state:', error);
+    console.error('Error details:', {
+      message: error.message,
+      code: error.code,
+      stack: error.stack
+    });
+    res.status(500).json({ 
+      error: 'Failed to save state',
+      details: error.message  // Send error to frontend too
+    });
   }
 });
 
