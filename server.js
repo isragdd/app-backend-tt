@@ -108,6 +108,40 @@ app.get('/api/state', (req, res) => {
   }
 });
 
+app.patch('/api/stats/:statName', (req, res) => {
+  const { statName } = req.params
+  const { delta } = req.body
+
+  if (!statName || typeof delta !== 'number') {
+    return res.status(400).json({ error: 'Invalid request' })
+  }
+
+  try {
+    const row = db.prepare('SELECT data FROM states WHERE id = ?').get('global')
+
+    if (!row) {
+      return res.status(404).json({ error: 'State not found' })
+    }
+
+    const state = JSON.parse(row.data)
+
+    if (!(statName in state.stats)) {
+      return res.status(400).json({ error: 'Invalid stat' })
+    }
+
+    state.stats[statName] += delta
+
+    db.prepare('UPDATE states SET data = ? WHERE id = ?')
+      .run(JSON.stringify(state), 'global')
+
+    res.json({ stats: state.stats })
+
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ error: 'Failed to update stat' })
+  }
+})
+
 app.post('/api/state', (req, res) => {
   try {
     const userId = req.body.user_id || 'default';
