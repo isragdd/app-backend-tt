@@ -59,6 +59,7 @@ app.get('/', (req, res) => {
     status: 'ok',
     service: 'app-backend-tt',
     message: 'Backend running. Use /api/* endpoints.'
+    cats: 'still loving them'
   });
 });
 
