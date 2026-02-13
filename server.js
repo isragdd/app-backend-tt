@@ -272,6 +272,32 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', time: Date.now() });
 });
 
+app.post('/api/test', (req, res) => {
+  try {
+    const { Str, Int } = req.body;
+
+    console.log('📥 Received from frontend:');
+    console.log('Str:', Str);
+    console.log('Int:', Int);
+
+    // You can validate
+    if (typeof Str !== 'string' || typeof Int !== 'number') {
+      return res.status(400).json({ error: 'Invalid data types' });
+    }
+
+    // Send response back
+    res.json({
+      success: true,
+      message: 'API test successful',
+      received: { Str, Int }
+    });
+
+  } catch (err) {
+    console.error('❌ Test route error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // Start server
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
