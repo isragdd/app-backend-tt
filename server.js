@@ -65,6 +65,7 @@ app.get('/api/state', async (req, res) => {
 });
 
 // Save game state
+// Save game state
 app.post('/api/state', async (req, res) => {
   try {
     const userId = req.body.user_id || 'default';
@@ -78,27 +79,58 @@ app.post('/api/state', async (req, res) => {
       [userId]
     );
 
+    // Ensure all JSON fields are properly formatted
+    const safeStats = typeof stats === 'string' ? JSON.parse(stats) : stats;
+    const safeTasks = typeof tasks === 'string' ? JSON.parse(tasks) : tasks;
+    const safeItems = typeof items === 'string' ? JSON.parse(items) : items;
+    const safeProps = typeof props === 'string' ? JSON.parse(props) : props;
+    const safeCustom = typeof custom === 'string' ? JSON.parse(custom) : custom;
+    const safeCollapsed = typeof collapsed === 'string' ? JSON.parse(collapsed) : collapsed;
+    const safeWorld = typeof world === 'string' ? JSON.parse(world) : (world || {});
+
     if (existing.rows.length > 0) {
       // Update
       await pool.query(`
         UPDATE game_state 
-        SET stats = $1, tasks = $2, items = $3, props = $4, custom = $5, 
-            day = $6, collapsed = $7, world = $8, updated_at = NOW()
+        SET stats = $1::jsonb, tasks = $2::jsonb, items = $3::jsonb, 
+            props = $4::jsonb, custom = $5::jsonb, day = $6, 
+            collapsed = $7::jsonb, world = $8::jsonb, updated_at = NOW()
         WHERE user_id = $9
-      `, [stats, tasks, items, props, custom, day, collapsed, world || {}, userId]);
+      `, [
+        JSON.stringify(safeStats),
+        JSON.stringify(safeTasks),
+        JSON.stringify(safeItems),
+        JSON.stringify(safeProps),
+        JSON.stringify(safeCustom),
+        day,
+        JSON.stringify(safeCollapsed),
+        JSON.stringify(safeWorld),
+        userId
+      ]);
       console.log('✅ State updated');
     } else {
       // Insert
       await pool.query(`
         INSERT INTO game_state (user_id, stats, tasks, items, props, custom, day, collapsed, world)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-      `, [userId, stats, tasks, items, props, custom, day, collapsed, world || {}]);
+        VALUES ($1, $2::jsonb, $3::jsonb, $4::jsonb, $5::jsonb, $6::jsonb, $7, $8::jsonb, $9::jsonb)
+      `, [
+        userId,
+        JSON.stringify(safeStats),
+        JSON.stringify(safeTasks),
+        JSON.stringify(safeItems),
+        JSON.stringify(safeProps),
+        JSON.stringify(safeCustom),
+        day,
+        JSON.stringify(safeCollapsed),
+        JSON.stringify(safeWorld)
+      ]);
       console.log('✅ State inserted');
     }
 
     res.json({ success: true, message: 'State saved' });
   } catch (err) {
     console.error('❌ Error saving state:', err);
+    console.error('Full error:', err.stack);
     res.status(500).json({ error: 'Failed to save state', details: err.message });
   }
 });
@@ -119,7 +151,8 @@ app.patch('/api/stats/:statName', async (req, res) => {
       return res.status(404).json({ error: 'State not found' });
     }
 
-    const stats = result.rows[0].stats;
+    // PostgreSQL returns JSONB as an object already, no need to parse
+    let stats = result.rows[0].stats;
 
     // Update stat
     if (value !== undefined) {
@@ -137,15 +170,17 @@ app.patch('/api/stats/:statName', async (req, res) => {
       stats[statName] = Math.max(0, stats[statName]);
     }
 
+    // Save back as JSONB
     await pool.query(
-      'UPDATE game_state SET stats = $1, updated_at = NOW() WHERE user_id = $2',
-      [stats, userId]
+      'UPDATE game_state SET stats = $1::jsonb, updated_at = NOW() WHERE user_id = $2',
+      [JSON.stringify(stats), userId]
     );
 
     res.json({ success: true, stats });
   } catch (err) {
     console.error('Error updating stat:', err);
-    res.status(500).json({ error: 'Failed to update stat' });
+    console.error('Full error:', err.stack);
+    res.status(500).json({ error: 'Failed to update stat', details: err.message });
   }
 });
 
@@ -162,6 +197,7 @@ app.get('/api/custom-tasks', async (req, res) => {
       return res.status(404).json({ error: 'State not found' });
     }
 
+    // PostgreSQL returns JSONB as object, not string
     res.json(result.rows[0].custom);
   } catch (err) {
     console.error('Error fetching custom tasks:', err);
@@ -220,14 +256,15 @@ app.patch('/api/custom-tasks/:taskId', async (req, res) => {
       return res.status(404).json({ error: 'State not found' });
     }
 
+    // PostgreSQL returns JSONB as object
     let customTasks = result.rows[0].custom;
     customTasks = customTasks.map(task =>
       task.id === taskId ? { ...task, ...updates } : task
     );
 
     await pool.query(
-      'UPDATE game_state SET custom = $1, updated_at = NOW() WHERE user_id = $2',
-      [customTasks, userId]
+      'UPDATE game_state SET custom = $1::jsonb, updated_at = NOW() WHERE user_id = $2',
+      [JSON.stringify(customTasks), userId]
     );
 
     res.json({ success: true, customTasks });
@@ -252,12 +289,13 @@ app.delete('/api/custom-tasks/:taskId', async (req, res) => {
       return res.status(404).json({ error: 'State not found' });
     }
 
+    // PostgreSQL returns JSONB as object
     let customTasks = result.rows[0].custom;
     customTasks = customTasks.filter(task => task.id !== taskId);
 
     await pool.query(
-      'UPDATE game_state SET custom = $1, updated_at = NOW() WHERE user_id = $2',
-      [customTasks, userId]
+      'UPDATE game_state SET custom = $1::jsonb, updated_at = NOW() WHERE user_id = $2',
+      [JSON.stringify(customTasks), userId]
     );
 
     res.json({ success: true, customTasks });
@@ -270,32 +308,6 @@ app.delete('/api/custom-tasks/:taskId', async (req, res) => {
 // Health check
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', time: Date.now() });
-});
-
-app.post('/api/test', (req, res) => {
-  try {
-    const { Str, Int } = req.body;
-
-    console.log('📥 Received from frontend:');
-    console.log('Str:', Str);
-    console.log('Int:', Int);
-
-    // You can validate
-    if (typeof Str !== 'string' || typeof Int !== 'number') {
-      return res.status(400).json({ error: 'Invalid data types' });
-    }
-
-    // Send response back
-    res.json({
-      success: true,
-      message: 'API test successful',
-      received: { Str, Int }
-    });
-
-  } catch (err) {
-    console.error('❌ Test route error:', err);
-    res.status(500).json({ error: 'Server error' });
-  }
 });
 
 // Start server
