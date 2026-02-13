@@ -220,6 +220,7 @@ app.post('/api/custom-tasks', async (req, res) => {
       return res.status(404).json({ error: 'State not found' });
     }
 
+    // PostgreSQL returns JSONB as object
     const customTasks = result.rows[0].custom;
 
     if (!newTask.id) {
@@ -229,8 +230,8 @@ app.post('/api/custom-tasks', async (req, res) => {
     customTasks.push(newTask);
 
     await pool.query(
-      'UPDATE game_state SET custom = $1, updated_at = NOW() WHERE user_id = $2',
-      [customTasks, userId]
+      'UPDATE game_state SET custom = $1::jsonb, updated_at = NOW() WHERE user_id = $2',
+      [JSON.stringify(customTasks), userId]
     );
 
     res.json({ success: true, task: newTask, customTasks });
